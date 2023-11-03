@@ -135,8 +135,6 @@ class Application {
 
     // Draws the sphere.
     this._context.draw(this._geometry_sphere, this._shader, this._uniforms);
-
-    
   }
 
   /**
