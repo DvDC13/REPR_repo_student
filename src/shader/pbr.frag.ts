@@ -4,6 +4,14 @@ precision highp float;
 out vec4 outFragColor;
 in vec3 vWsNormal;
 
+struct PointLight
+{
+  vec3 position;
+  vec3 color;
+  float intensity;
+};
+uniform PointLight uLight;
+
 struct Material
 {
   vec3 albedo;
@@ -24,8 +32,7 @@ void
 main()
 {
   // **DO NOT** forget to do all your computation in linear space.
-  vec3 normalN = vWsNormal * 0.5 + 0.5;
-  vec3 albedo = sRGBToLinear(vec4(normalN, 1.0)).rgb;
+  vec3 albedo = sRGBToLinear(vec4(uMaterial.albedo, 1.0) * vec4(uLight.color, 1.0) * uLight.intensity).rgb;
 
   // **DO NOT** forget to apply gamma correction as last step.
   outFragColor.rgba = LinearTosRGB(vec4(albedo, 1.0));

@@ -7,6 +7,7 @@ import { PBRShader } from './shader/pbr-shader';
 import { Texture, Texture2D } from './textures/texture';
 import { UniformType } from './types';
 import { SphereGeometry } from './geometries/sphere';
+import { PointLight, PonctualLight } from './lights/lights';
 
 interface GUIProperties {
   albedo: number[];
@@ -29,6 +30,8 @@ class Application {
   private _geometry_sphere: SphereGeometry;
   private _uniforms: Record<string, UniformType | Texture>;
 
+  private _pointLight: PointLight;
+
   private _textureExample: Texture2D<HTMLElement> | null;
 
   private _camera: Camera;
@@ -46,7 +49,7 @@ class Application {
   constructor(canvas: HTMLCanvasElement) {
     this._context = new GLContext(canvas);
     this._camera = new Camera();
-    vec3.set(this._camera.position, 0.0, 0.0, 2.0);
+    vec3.set(this._camera.position, 0.0, 0.0, 5.0);
 
     this._mouseClicked = false;
     this._mouseCurrentPosition = { x: 0, y: 0 };
@@ -55,10 +58,19 @@ class Application {
     this._uniforms = {
       'uMaterial.albedo': vec3.create(),
       'uCamera.WsToCs': mat4.create(),
+      'uLight.position': vec3.create(),
+      'uLight.color': vec3.create(),
+      'uLight.intensity': 0.5
     };
+
+    this._pointLight = new PointLight();
+    this._pointLight.setPosition(0.0, 0.0, 0.0);
+    this._pointLight.setColorRGB(1.0, 1.0, 1.0);
+    this._pointLight.setIntensity(0.5);
 
     this._shader = new PBRShader();
     this._textureExample = null;
+    this._shader.pointLightCount = 1;
 
     this._guiProperties = {
       albedo: [255, 255, 255]
@@ -71,7 +83,6 @@ class Application {
    * Initializes the application.
    */
   async init() {
-    //this._context.uploadGeometry(this._geometry_triangle);
     this._context.uploadGeometry(this._geometry_sphere);
     this._context.compileProgram(this._shader);
 
@@ -133,6 +144,13 @@ class Application {
     // **Note**: if you want to modify the position of the geometry, you will
     // need to add a model matrix, corresponding to the mesh's matrix.
 
+    // Set the light position.
+    this._uniforms['uLight.position'] = this._pointLight.positionWS;
+    // Set the light color.
+    this._uniforms['uLight.color'] = this._pointLight.color;
+    // Set the light intensity.
+    this._uniforms['uLight.intensity'] = this._pointLight.intensity;
+
     // Draws the sphere.
     this._context.draw(this._geometry_sphere, this._shader, this._uniforms);
   }
@@ -150,7 +168,14 @@ class Application {
    */
   private _createGUI(): GUI {
     const gui = new GUI();
+    gui.add(this._camera.position, '0', -10.0, 10.0).name('camera x');
+    gui.add(this._camera.position, '1', -10.0, 10.0).name('camera y');
+    gui.add(this._camera.position, '2', -10.0, 10.0).name('camera z');
     gui.addColor(this._guiProperties, 'albedo');
+    gui.add(this._pointLight.positionWS, '0', -10.0, 10.0).name('light x');
+    gui.add(this._pointLight.positionWS, '1', -10.0, 10.0).name('light y');
+    gui.add(this._pointLight.positionWS, '2', -10.0, 10.0).name('light z');
+    gui.add(this._pointLight, 'intensity', 0.0, 10.0).name('light intensity');
     return gui;
   }
 
