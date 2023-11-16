@@ -30,7 +30,12 @@ class Application {
   private _geometry_sphere: SphereGeometry;
   private _uniforms: Record<string, UniformType | Texture>;
 
+  private _grid_size: number;
+
   private _pointLight: PointLight;
+
+  private _metallic: number;
+  private _roughness: number;
 
   private _textureExample: Texture2D<HTMLElement> | null;
 
@@ -49,28 +54,63 @@ class Application {
   constructor(canvas: HTMLCanvasElement) {
     this._context = new GLContext(canvas);
     this._camera = new Camera();
-    vec3.set(this._camera.position, 0.0, 0.0, 5.0);
+    vec3.set(this._camera.position, 0.0, 0.0, 7.0);
+
+    this._pointLight = new PointLight();
+    this._pointLight.setPosition(0.0, 10.0, 10.0);
+    this._pointLight.setColorRGB(1.0, 1.0, 1.0);
+    this._pointLight.setIntensity(1.0);
 
     this._mouseClicked = false;
     this._mouseCurrentPosition = { x: 0, y: 0 };
 
-    this._geometry_sphere = new SphereGeometry(0.5, 32, 32);
+    this._metallic = 0.0;
+    this._roughness = 0.5;
+
+    this._grid_size = 5;
+
+    this._geometry_sphere = new SphereGeometry(0.2, 32, 32);
     this._uniforms = {
       'uMaterial.albedo': vec3.create(),
       'uCamera.WsToCs': mat4.create(),
-      'uLight.position': vec3.create(),
-      'uLight.color': vec3.create(),
-      'uLight.intensity': 0.5
+      'uCamera.position': vec3.create(),
+      'uModel': mat4.create(),
+      'roughness': 0.5,
+      'metallic': 0.0
     };
 
-    this._pointLight = new PointLight();
-    this._pointLight.setPosition(0.0, 0.0, 0.0);
-    this._pointLight.setColorRGB(1.0, 1.0, 1.0);
-    this._pointLight.setIntensity(0.5);
+    let lights = [
+      {
+        position: vec3.fromValues(0.0, 10.0, 10.0),
+        color: vec3.fromValues(1.0, 1.0, 1.0),
+        intensity: 1.0
+      },
+      {
+        position: vec3.fromValues(0.0, 10.0, -10.0),
+        color: vec3.fromValues(1.0, 1.0, 1.0),
+        intensity: 1.0
+      },
+      {
+        position: vec3.fromValues(10.0, 10.0, 0.0),
+        color: vec3.fromValues(1.0, 1.0, 1.0),
+        intensity: 1.0
+      },
+      {
+        position: vec3.fromValues(-10.0, 10.0, 0.0),
+        color: vec3.fromValues(1.0, 1.0, 1.0),
+        intensity: 1.0
+      }
+    ];
+
+    for (const [index, light] of lights.entries()) {
+      this._uniforms['uLight[' + index + '].position'] = light.position;
+      this._uniforms['uLight[' + index + '].color'] = light.color;
+      this._uniforms['uLight[' + index + '].intensity'] = light.intensity;
+    }
 
     this._shader = new PBRShader();
     this._textureExample = null;
-    this._shader.pointLightCount = 1;
+    this._shader.pointLightCount = 4;
 
     this._guiProperties = {
       albedo: [255, 255, 255]
@@ -88,12 +128,14 @@ class Application {
 
     // Example showing how to load a texture and upload it to GPU.
     this._textureExample = await Texture2D.load(
-      'assets/ggx-brdf-integrated.png'
+      //'assets/ggx-brdf-integrated.png'
+      'assets/textures/rusted_iron/rustediron2_basecolor.png'
     );
     if (this._textureExample !== null) {
       this._context.uploadTexture(this._textureExample);
       // You can then use it directly as a uniform:
       // ```uniforms.myTexture = this._textureExample;```
+      this._uniforms.texture = this._textureExample;
     }
 
     // Event handlers (mouse and keyboard)
@@ -144,6 +186,9 @@ class Application {
     // **Note**: if you want to modify the position of the geometry, you will
     // need to add a model matrix, corresponding to the mesh's matrix.
 
+    // Set the camera position.
+    this._uniforms['uCamera.position'] = this._camera.position;
+
     // Set the light position.
     this._uniforms['uLight.position'] = this._pointLight.positionWS;
     // Set the light color.
@@ -151,8 +196,26 @@ class Application {
     // Set the light intensity.
     this._uniforms['uLight.intensity'] = this._pointLight.intensity;
 
-    // Draws the sphere.
-    this._context.draw(this._geometry_sphere, this._shader, this._uniforms);
+    // Set the roughness.
+    this._uniforms['roughness'] = this._roughness;
+
+    // Set the metallic.
+    this._uniforms['metallic'] = this._metallic;
+
+    let grid_size_half = Math.floor(this._grid_size / 2);
+    for (let i = -grid_size_half; i <= grid_size_half; i++)
+    {
+      for (let j = -grid_size_half; j <= grid_size_half; j++)
+      {
+        let modelMatrix = mat4.create();
+        modelMatrix = mat4.identity(modelMatrix);
+        mat4.translate(modelMatrix, modelMatrix, vec3.fromValues(i, j, 0.0));
+        this._uniforms['uModel'] = modelMatrix;
+
+        // Draw the sphere.
+        this._context.draw(this._geometry_sphere, this._shader, this._uniforms);
+      }
+    }
   }
 
   /**
@@ -168,14 +231,12 @@ class Application {
    */
   private _createGUI(): GUI {
     const gui = new GUI();
+    gui.addColor(this._guiProperties, 'albedo');
     gui.add(this._camera.position, '0', -10.0, 10.0).name('camera x');
     gui.add(this._camera.position, '1', -10.0, 10.0).name('camera y');
     gui.add(this._camera.position, '2', -10.0, 10.0).name('camera z');
-    gui.addColor(this._guiProperties, 'albedo');
-    gui.add(this._pointLight.positionWS, '0', -10.0, 10.0).name('light x');
-    gui.add(this._pointLight.positionWS, '1', -10.0, 10.0).name('light y');
-    gui.add(this._pointLight.positionWS, '2', -10.0, 10.0).name('light z');
-    gui.add(this._pointLight, 'intensity', 0.0, 10.0).name('light intensity');
+    gui.add(this, '_roughness', 0.0, 1.0).name('roughness');
+    gui.add(this, '_metallic', 0.0, 1.0).name('metallic');
     return gui;
   }
 
