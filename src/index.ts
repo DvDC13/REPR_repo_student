@@ -76,7 +76,8 @@ class Application {
       'uCamera.position': vec3.create(),
       'uModel': mat4.create(),
       'roughness': 0.5,
-      'metallic': 0.0
+      'metallic': 0.0,
+      
     };
 
     let lights = [
