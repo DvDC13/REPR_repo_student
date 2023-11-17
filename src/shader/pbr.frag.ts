@@ -1,7 +1,7 @@
 export default `
 precision highp float;
 
-#define USE_UV 1
+#define USE_UV
 
 out vec4 outFragColor;
 
@@ -39,6 +39,15 @@ vec4 sRGBToLinear( in vec4 value ) {
 // From three.js
 vec4 LinearTosRGB( in vec4 value ) {
 	return vec4( mix( pow( value.rgb, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ), value.rgb * 12.92, vec3( lessThanEqual( value.rgb, vec3( 0.0031308 ) ) ) ), value.a );
+}
+
+// Convert a unit cartesian vector to polar coordinates
+vec2 cartesianToPolar(vec3 cartesian) {
+    // Compute azimuthal angle, in [-PI, PI]
+    float phi = atan(cartesian.z, cartesian.x);
+    // Compute polar angle, in [-PI/2, PI/2]
+    float theta = asin(cartesian.y);
+    return vec2(phi, theta);
 }
 
 const float M_PI = 3.1415926535897932384626433832795;

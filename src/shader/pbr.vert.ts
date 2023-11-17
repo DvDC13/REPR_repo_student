@@ -2,7 +2,7 @@ export default `
 
 precision highp float;
 
-#define USE_UV 1
+#define USE_UV
 
 in vec3 in_position;
 in vec3 in_normal;

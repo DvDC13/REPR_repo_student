@@ -77,27 +77,26 @@ class Application {
       'uModel': mat4.create(),
       'roughness': 0.5,
       'metallic': 0.0,
-      
     };
 
     let lights = [
       {
-        position: vec3.fromValues(0.0, 10.0, 10.0),
+        position: vec3.fromValues(-3.0, 1.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(0.0, 10.0, -10.0),
+        position: vec3.fromValues(4.0, 3.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(10.0, 10.0, 0.0),
+        position: vec3.fromValues(5.0, -3.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(-10.0, 10.0, 0.0),
+        position: vec3.fromValues(-5.0, -1.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       }
