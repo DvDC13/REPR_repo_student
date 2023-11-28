@@ -37,7 +37,9 @@ class Application {
   private _metallic: number;
   private _roughness: number;
 
-  private _textureExample: Texture2D<HTMLElement> | null;
+  private _texturebrdfPreInt: Texture2D<HTMLElement> | null;
+  private _textureprefilteredDiffuse: Texture2D<HTMLElement> | null;
+  private _textureprefilteredSpecular: Texture2D<HTMLElement> | null;
 
   private _camera: Camera;
 
@@ -81,22 +83,22 @@ class Application {
 
     let lights = [
       {
-        position: vec3.fromValues(-3.0, 1.0, 5.0),
+        position: vec3.fromValues(-5.0, 5.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(4.0, 3.0, 5.0),
+        position: vec3.fromValues(5.0, 5.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(5.0, -3.0, 5.0),
+        position: vec3.fromValues(-5.0, -5.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(-5.0, -1.0, 5.0),
+        position: vec3.fromValues(5.0, -5.0, 5.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       }
@@ -109,7 +111,9 @@ class Application {
     }
 
     this._shader = new PBRShader();
-    this._textureExample = null;
+    this._texturebrdfPreInt = null;
+    this._textureprefilteredDiffuse = null;
+    this._textureprefilteredSpecular = null;
     this._shader.pointLightCount = 4;
 
     this._guiProperties = {
@@ -127,15 +131,31 @@ class Application {
     this._context.compileProgram(this._shader);
 
     // Example showing how to load a texture and upload it to GPU.
-    this._textureExample = await Texture2D.load(
-      //'assets/ggx-brdf-integrated.png'
-      'assets/textures/rusted_iron/rustediron2_basecolor.png'
+    this._texturebrdfPreInt = await Texture2D.load(
+      'assets/ggx-brdf-integrated.png'
     );
-    if (this._textureExample !== null) {
-      this._context.uploadTexture(this._textureExample);
+    if (this._texturebrdfPreInt !== null) {
+      this._context.uploadTexture(this._texturebrdfPreInt);
       // You can then use it directly as a uniform:
       // ```uniforms.myTexture = this._textureExample;```
-      this._uniforms.texture = this._textureExample;
+      this._uniforms.brdfPreInt = this._texturebrdfPreInt;
+    }
+
+    this._textureprefilteredDiffuse = await Texture2D.load(
+      'assets/env/Alexs_Apt_2k-diffuse-RGBM.png'
+    );
+    if (this._textureprefilteredDiffuse !== null) {
+      this._context.uploadTexture(this._textureprefilteredDiffuse);
+      this._uniforms.prefilteredDiffuse = this._textureprefilteredDiffuse;
+    }
+
+    this._textureprefilteredSpecular = await Texture2D.load(
+      'assets/env/Alexs_Apt_2k-specular-RGBM.png'
+    );
+
+    if (this._textureprefilteredSpecular !== null) {
+      this._context.uploadTexture(this._textureprefilteredSpecular);
+      this._uniforms.prefilteredSpecular = this._textureprefilteredSpecular;
     }
 
     // Event handlers (mouse and keyboard)
