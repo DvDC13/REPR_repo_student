@@ -77,19 +77,19 @@ vec3 computeUVFromRoughness(vec3 reflected, float roughness)
   vec2 uv_texture1 = polarToEquirectangular(polar_reflected);
   vec2 uv_texture2 = polarToEquirectangular(polar_reflected);
 
-  float lvl1 = floor(roughness * 5.0);
-  float lvl2 = ceil(roughness * 5.0);
+  float min_range = floor(roughness * 5.0);
+  float high_range = ceil(roughness * 5.0);
 
-  uv_texture1.x = mix(0.0, pow(0.5, lvl1), uv_texture1.x);
-  uv_texture1.y = mix(1.0 - pow(0.5, lvl1), 1.0 - pow(0.5, lvl2), uv_texture1.y);
+  uv_texture1.x = mix(0.0, pow(0.5, min_range), uv_texture1.x);
+  uv_texture1.y = mix(1.0 - pow(0.5, min_range), 1.0 - pow(0.5, high_range), uv_texture1.y);
 
-  uv_texture2.x = mix(0.0, pow(0.5, lvl2), uv_texture2.x);
-  uv_texture2.y = mix(1.0 - pow(0.5, lvl2), 1.0 - pow(0.5, lvl2 + 1.0), uv_texture2.y);
+  uv_texture2.x = mix(0.0, pow(0.5, high_range), uv_texture2.x);
+  uv_texture2.y = mix(1.0 - pow(0.5, high_range), 1.0 - pow(0.5, high_range + 1.0), uv_texture2.y);
 
   vec3 prefilteredColor_1 = DecodeRGBM(texture(prefilteredSpecular, uv_texture1));
   vec3 prefilteredColor_2 = DecodeRGBM(texture(prefilteredSpecular, uv_texture2));
 
-  vec3 prefilteredColor = mix(prefilteredColor_1, prefilteredColor_2, roughness * 5.0 - lvl1);
+  vec3 prefilteredColor = mix(prefilteredColor_1, prefilteredColor_2, roughness * 5.0 - min_range);
 
   return prefilteredColor;
 }
@@ -138,6 +138,16 @@ float G_Smith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
+float exposure = 1.0;
+
+float reinhard(float hdr) {
+    return hdr / (hdr + 1.0);
+}
+
+vec3 reinhard(vec3 x) {
+    return vec3(reinhard(x.x), reinhard(x.y), reinhard(x.z));
+}
+
 void main()
 {
   vec3 albedo;
@@ -146,37 +156,24 @@ void main()
   vec3 N = normalize(vWsNormal);
   vec3 V = normalize(camPosition - worldPosition);
 
-  vec3 irradiance = vec3(0.0);
-  for (int i = 0; i < POINT_LIGHT_COUNT; i++)
-  {
-    vec3 L = normalize(uLight[i].position - worldPosition);
-    vec3 H = normalize(V + L);
+  vec3 F0 = mix(vec3(0.04), albedo, metallic);
+  vec3 F = F_Schlick(max(dot(N, V), 0.0), F0);
 
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
-    vec3 F = F_Schlick(max(dot(H, V), 0.0), F0);
+  vec3 kS = F;
+  vec3 kD = vec3(1.0) - kS;
+  kD *= 1.0 - metallic;
 
-    vec3 kS = F;
-    vec3 kD = vec3(1.0) - kS;
-    kD *= 1.0 - metallic;
+  // Diffuse 
+  vec3 diffuseBRDFEval = kD * albedo * DecodeRGBM(texture(prefilteredDiffuse, polarToEquirectangular(cartesianToPolar(N))));
 
-    // Diffuse 
-    vec3 diffuseBRDFEval = kD * albedo * DecodeRGBM(texture(prefilteredDiffuse, polarToEquirectangular(cartesianToPolar(N))));
+  // Specular
+  vec3 reflected = reflect(-V, N);
+  vec3 prefilteredSpec = computeUVFromRoughness(reflected, roughness);
+  vec2 brdf = texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness)).xy;
+  vec3 specularBRDFEval = prefilteredSpec * (kS * brdf.x + brdf.y);
 
-    // Specular
-    vec3 reflected = reflect(-V, N);
+  vec3 irradiance = (diffuseBRDFEval + specularBRDFEval);
 
-    vec3 prefilteredSpec = computeUVFromRoughness(reflected, roughness);
-
-    vec2 brdf = texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness)).xy;
-
-    vec3 specularBRDFEval = prefilteredSpec * (kS * brdf.x + brdf.y);
-
-    // Compute irradiance
-    float costTheta = max(dot(N, L), 0.0);
-
-    irradiance += (diffuseBRDFEval + specularBRDFEval) * uLight[i].color * uLight[i].intensity * costTheta;
-  }
-
-  outFragColor.rgba = LinearTosRGB(vec4(irradiance, 1.0));
+  outFragColor.rgba = LinearTosRGB(vec4(reinhard(irradiance), 1.0));
 }
 `;

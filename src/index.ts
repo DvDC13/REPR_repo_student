@@ -34,9 +34,6 @@ class Application {
 
   private _pointLight: PointLight;
 
-  private _metallic: number;
-  private _roughness: number;
-
   private _texturebrdfPreInt: Texture2D<HTMLElement> | null;
   private _textureprefilteredDiffuse: Texture2D<HTMLElement> | null;
   private _textureprefilteredSpecular: Texture2D<HTMLElement> | null;
@@ -56,7 +53,7 @@ class Application {
   constructor(canvas: HTMLCanvasElement) {
     this._context = new GLContext(canvas);
     this._camera = new Camera();
-    vec3.set(this._camera.position, 0.0, 0.0, 7.0);
+    vec3.set(this._camera.position, 0.0, 0.0, 5.0);
 
     this._pointLight = new PointLight();
     this._pointLight.setPosition(0.0, 10.0, 10.0);
@@ -65,9 +62,6 @@ class Application {
 
     this._mouseClicked = false;
     this._mouseCurrentPosition = { x: 0, y: 0 };
-
-    this._metallic = 0.0;
-    this._roughness = 0.5;
 
     this._grid_size = 5;
 
@@ -83,22 +77,22 @@ class Application {
 
     let lights = [
       {
-        position: vec3.fromValues(-5.0, 5.0, 5.0),
+        position: vec3.fromValues(-10.0, 10.0, 10.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(5.0, 5.0, 5.0),
+        position: vec3.fromValues(10.0, 10.0, 10.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(-5.0, -5.0, 5.0),
+        position: vec3.fromValues(-10.0, -10.0, 10.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       },
       {
-        position: vec3.fromValues(5.0, -5.0, 5.0),
+        position: vec3.fromValues(10.0, -10.0, 10.0),
         color: vec3.fromValues(1.0, 1.0, 1.0),
         intensity: 1.0
       }
@@ -216,11 +210,10 @@ class Application {
     // Set the light intensity.
     this._uniforms['uLight.intensity'] = this._pointLight.intensity;
 
-    // Set the roughness.
-    this._uniforms['roughness'] = this._roughness;
-
-    // Set the metallic.
-    this._uniforms['metallic'] = this._metallic;
+    // Array of roughness values to test.
+    let roughnessValues = [0.0025, 0.04, 0.16, 0.36, 0.64];
+    // Array of metallic values to test.
+    let metallicValues = [0.0, 0.2, 0.4, 0.6, 0.8];
 
     let grid_size_half = Math.floor(this._grid_size / 2);
     for (let i = -grid_size_half; i <= grid_size_half; i++)
@@ -229,8 +222,11 @@ class Application {
       {
         let modelMatrix = mat4.create();
         modelMatrix = mat4.identity(modelMatrix);
-        mat4.translate(modelMatrix, modelMatrix, vec3.fromValues(i, j, 0.0));
+        mat4.translate(modelMatrix, modelMatrix, vec3.fromValues(j * 0.5, i * 0.5, 0.0));
         this._uniforms['uModel'] = modelMatrix;
+
+        this._uniforms['roughness'] = roughnessValues[j + grid_size_half];
+        this._uniforms['metallic'] = metallicValues[i + grid_size_half];
 
         // Draw the sphere.
         this._context.draw(this._geometry_sphere, this._shader, this._uniforms);
@@ -252,11 +248,9 @@ class Application {
   private _createGUI(): GUI {
     const gui = new GUI();
     gui.addColor(this._guiProperties, 'albedo');
-    gui.add(this._camera.position, '0', -10.0, 10.0).name('camera x');
-    gui.add(this._camera.position, '1', -10.0, 10.0).name('camera y');
-    gui.add(this._camera.position, '2', -10.0, 10.0).name('camera z');
-    gui.add(this, '_roughness', 0.0, 1.0).name('roughness');
-    gui.add(this, '_metallic', 0.0, 1.0).name('metallic');
+    gui.add(this._camera.position, '0', -5.0, 5.0).name('camera x');
+    gui.add(this._camera.position, '1', -5.0, 5.0).name('camera y');
+    gui.add(this._camera.position, '2', -5.0, 5.0).name('camera z');
     return gui;
   }
 
