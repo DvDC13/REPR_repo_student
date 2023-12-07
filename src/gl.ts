@@ -284,6 +284,14 @@ export class GLContext {
   }
 
   /**
+   * Returns the textures cache.
+   * @returns The textures cache
+   */
+  public getTextures(): WeakMap<Texture, TextureCache>  {
+    return this._textures;
+  }
+
+  /**
    * Deletes a geometry from the WebGL context.
    *
    * @param geometry - The geometry to delete

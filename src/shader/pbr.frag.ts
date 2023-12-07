@@ -5,13 +5,15 @@ precision highp float;
 
 out vec4 outFragColor;
 
-const float M_PI = 3.1415926535897932384626433832795;
-
 #ifdef USE_UV
   in vec2 vUv;
   uniform sampler2D brdfPreInt;
   uniform sampler2D prefilteredDiffuse;
   uniform sampler2D prefilteredSpecular;
+  uniform sampler2D ironColor;
+  uniform sampler2D ironNormal;
+  uniform sampler2D ironRoughness;
+  uniform sampler2D ironMetallic;
 #endif
 
 in vec3 vWsNormal;
@@ -20,6 +22,10 @@ in vec3 worldPosition;
 
 uniform float roughness;
 uniform float metallic;
+
+uniform bool ponctualLights_option;
+uniform bool texture_pbr_option;
+uniform bool imageBasedLighting_option;
 
 struct PointLight
 {
@@ -35,6 +41,8 @@ struct Material
 };
 uniform Material uMaterial;
 
+const float M_PI = 3.1415926535897932384626433832795;
+
 // From three.js
 vec4 sRGBToLinear( in vec4 value ) {
 	return vec4( mix( pow( value.rgb * 0.9478672986 + vec3( 0.0521327014 ), vec3( 2.4 ) ), value.rgb * 0.0773993808, vec3( lessThanEqual( value.rgb, vec3( 0.04045 ) ) ) ), value.a );
@@ -45,6 +53,13 @@ vec4 LinearTosRGB( in vec4 value ) {
 	return vec4( mix( pow( value.rgb, vec3( 0.41666 ) ) * 1.055 - vec3( 0.055 ), value.rgb * 12.92, vec3( lessThanEqual( value.rgb, vec3( 0.0031308 ) ) ) ), value.a );
 }
 
+// Convert from RGBM to linear
+float MaxRange = 7.0;
+vec3 DecodeRGBM(vec4 rgbm)
+{
+    return rgbm.rgb * (rgbm.a * MaxRange);
+}
+
 // Convert a unit cartesian vector to polar coordinates
 vec2 cartesianToPolar(vec3 cartesian) {
     // Compute azimuthal angle, in [-PI, PI]
@@ -52,13 +67,6 @@ vec2 cartesianToPolar(vec3 cartesian) {
     // Compute polar angle, in [-PI/2, PI/2]
     float theta = asin(cartesian.y);
     return vec2(phi, theta);
-}
-
-float MaxRange = 7.0;
-// Convert from RGBM to linear
-vec3 DecodeRGBM(vec4 rgbm)
-{
-    return rgbm.rgb * (rgbm.a * MaxRange);
 }
 
 // Convert polar to equirectangular coordinates
@@ -138,6 +146,7 @@ float G_Smith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
+// Reinhard tone mapping
 float exposure = 1.0;
 
 float reinhard(float hdr) {
@@ -148,10 +157,95 @@ vec3 reinhard(vec3 x) {
     return vec3(reinhard(x.x), reinhard(x.y), reinhard(x.z));
 }
 
-void main()
+void ponctualLights()
 {
-  vec3 albedo;
-  albedo = sRGBToLinear(vec4(uMaterial.albedo, 1.0)).rgb;
+  vec3 albedo = sRGBToLinear(vec4(uMaterial.albedo, 1.0)).rgb;
+
+  vec3 N = normalize(vWsNormal);
+  vec3 V = normalize(camPosition - worldPosition);
+
+  vec3 irradiance = vec3(0.0);
+  for (int i = 0; i < POINT_LIGHT_COUNT; i++)
+  {
+    vec3 L = normalize(uLight[i].position - worldPosition);
+    vec3 H = normalize(V + L);
+
+    float D = D_GGX(N, H, roughness);
+
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F = F_Schlick(max(dot(H, V), 0.0), F0);
+
+    float G = G_Smith(N, V, L, roughness);
+
+    vec3 numerator = D * F * G;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
+
+    vec3 specular = numerator / max(denominator, 0.001);
+
+    vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+    kD *= 1.0 - metallic;
+
+    float costTheta = max(dot(N, L), 0.0);
+
+    vec3 diffuse = kD * Diffuse_Lambert(albedo);
+    
+    irradiance += (diffuse + specular) * uLight[i].color * uLight[i].intensity * costTheta;
+  }
+
+  outFragColor.rgba = LinearTosRGB(vec4(irradiance, 1.0));
+}
+
+void textureRustedIron_pbr()
+{
+  vec3 V = normalize(camPosition - worldPosition);
+
+  vec3 albedo = sRGBToLinear(texture(ironColor, vUv)).rgb;
+
+  vec3 normal = texture(ironNormal, vUv).rgb;
+  vec3 N = normalize(normal * 2.0 - 1.0);
+
+  vec4 metallicTexture = texture(ironMetallic, vUv);
+  float metallic = metallicTexture.x;
+
+  vec4 roughnessTexture = texture(ironRoughness, vUv);
+  float roughness = roughnessTexture.x;
+
+  vec3 irradiance = vec3(0.0);
+  for (int i = 0; i < POINT_LIGHT_COUNT; i++)
+  {
+    vec3 L = normalize(uLight[i].position - worldPosition);
+    vec3 H = normalize(V + L);
+
+    float D = D_GGX(N, H, roughness);
+
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F = F_Schlick(max(dot(H, V), 0.0), F0);
+
+    float G = G_Smith(N, V, L, roughness);
+
+    vec3 numerator = D * F * G;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
+
+    vec3 specular = numerator / max(denominator, 0.001);
+
+    vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+    kD *= 1.0 - metallic;
+
+    float costTheta = max(dot(N, L), 0.0);
+
+    vec3 diffuse = kD * Diffuse_Lambert(albedo);
+    
+    irradiance += (diffuse + specular) * uLight[i].color * uLight[i].intensity * costTheta;
+  }
+
+  outFragColor.rgba = LinearTosRGB(vec4(irradiance, 1.0));
+}
+
+void imageBasedLighting()
+{
+  vec3 albedo = sRGBToLinear(vec4(uMaterial.albedo, 1.0)).rgb;
 
   vec3 N = normalize(vWsNormal);
   vec3 V = normalize(camPosition - worldPosition);
@@ -169,11 +263,27 @@ void main()
   // Specular
   vec3 reflected = reflect(-V, N);
   vec3 prefilteredSpec = computeUVFromRoughness(reflected, roughness);
-  vec2 brdf = texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness)).xy;
+  vec2 brdf =  sRGBToLinear(texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness))).xy;
   vec3 specularBRDFEval = prefilteredSpec * (kS * brdf.x + brdf.y);
 
   vec3 irradiance = (diffuseBRDFEval + specularBRDFEval);
 
   outFragColor.rgba = LinearTosRGB(vec4(reinhard(irradiance), 1.0));
+}
+
+void main()
+{
+  if (ponctualLights_option)
+  {
+    ponctualLights();
+  }
+  else if (texture_pbr_option)
+  {
+    textureRustedIron_pbr();
+  }
+  else if (imageBasedLighting_option)
+  {
+    imageBasedLighting();
+  }
 }
 `;

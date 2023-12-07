@@ -1,13 +1,14 @@
 import { GUI } from 'dat.gui';
 import { mat4, vec3, quat } from 'gl-matrix';
 import { Camera } from './camera';
-import { TriangleGeometry } from './geometries/triangle';
 import { GLContext } from './gl';
 import { PBRShader } from './shader/pbr-shader';
 import { Texture, Texture2D } from './textures/texture';
-import { UniformType } from './types';
+import { PixelArray, UniformType } from './types';
 import { SphereGeometry } from './geometries/sphere';
-import { PointLight, PonctualLight } from './lights/lights';
+import { PointLight } from './lights/lights';
+import { IBLGen } from './ibl_gen';
+import { DiffuseShader } from './shader/diffuse-gen-shader';
 
 interface GUIProperties {
   albedo: number[];
@@ -34,9 +35,20 @@ class Application {
 
   private _pointLight: PointLight;
 
-  private _texturebrdfPreInt: Texture2D<HTMLElement> | null;
-  private _textureprefilteredDiffuse: Texture2D<HTMLElement> | null;
-  private _textureprefilteredSpecular: Texture2D<HTMLElement> | null;
+  private _textureBrdfPreInt: Texture2D<HTMLElement> | null;
+  private _texturePrefilteredDiffuse: Texture2D<HTMLElement> | null;
+  private _texturePrefilteredSpecular: Texture2D<HTMLElement> | null;
+
+  private _textureIronColor: Texture2D<HTMLElement> | null;
+  private _textureIronNormal: Texture2D<HTMLElement> | null;
+  private _textureIronRoughness: Texture2D<HTMLElement> | null;
+  private _textureIronMetallic: Texture2D<HTMLElement> | null;
+
+  private _textureComputeDiffuse: Texture2D<PixelArray> | null;
+
+  private _ponctualLights_option : boolean;
+  private _texture_pbr_option : boolean;
+  private _imageBasedLighting_option : boolean;
 
   private _camera: Camera;
 
@@ -71,8 +83,11 @@ class Application {
       'uCamera.WsToCs': mat4.create(),
       'uCamera.position': vec3.create(),
       'uModel': mat4.create(),
-      'roughness': 0.5,
+      'roughness': 0.0,
       'metallic': 0.0,
+      'ponctualLights_option': false,
+      'texture_pbr_option': false,
+      'imageBasedLighting_option': false,
     };
 
     let lights = [
@@ -105,9 +120,21 @@ class Application {
     }
 
     this._shader = new PBRShader();
-    this._texturebrdfPreInt = null;
-    this._textureprefilteredDiffuse = null;
-    this._textureprefilteredSpecular = null;
+    this._textureBrdfPreInt = null;
+    this._texturePrefilteredDiffuse = null;
+    this._texturePrefilteredSpecular = null;
+
+    this._textureIronColor = null;
+    this._textureIronNormal = null;
+    this._textureIronRoughness = null;
+    this._textureIronMetallic = null;
+
+    this._textureComputeDiffuse = null;
+
+    this._ponctualLights_option = false;
+    this._texture_pbr_option = false;
+    this._imageBasedLighting_option = false;
+
     this._shader.pointLightCount = 4;
 
     this._guiProperties = {
@@ -124,33 +151,91 @@ class Application {
     this._context.uploadGeometry(this._geometry_sphere);
     this._context.compileProgram(this._shader);
 
+    let generator = new IBLGen(this._context, this._camera);
+    
     // Example showing how to load a texture and upload it to GPU.
-    this._texturebrdfPreInt = await Texture2D.load(
+    this._textureBrdfPreInt = await Texture2D.load(
       'assets/ggx-brdf-integrated.png'
     );
-    if (this._texturebrdfPreInt !== null) {
-      this._context.uploadTexture(this._texturebrdfPreInt);
+    if (this._textureBrdfPreInt !== null) {
+      this._context.uploadTexture(this._textureBrdfPreInt);
       // You can then use it directly as a uniform:
-      // ```uniforms.myTexture = this._textureExample;```
-      this._uniforms.brdfPreInt = this._texturebrdfPreInt;
+      this._uniforms.brdfPreInt = this._textureBrdfPreInt;
     }
 
-    this._textureprefilteredDiffuse = await Texture2D.load(
+    // Example showing how to load a texture and upload it to GPU.
+    this._texturePrefilteredDiffuse = await Texture2D.load(
       'assets/env/Alexs_Apt_2k-diffuse-RGBM.png'
     );
-    if (this._textureprefilteredDiffuse !== null) {
-      this._context.uploadTexture(this._textureprefilteredDiffuse);
-      this._uniforms.prefilteredDiffuse = this._textureprefilteredDiffuse;
+    if (this._texturePrefilteredDiffuse !== null) {
+      this._context.uploadTexture(this._texturePrefilteredDiffuse);
+      // You can then use it directly as a uniform:
+      this._uniforms.prefilteredDiffuse = this._texturePrefilteredDiffuse;
     }
 
-    this._textureprefilteredSpecular = await Texture2D.load(
+    // Example showing how to load a texture and upload it to GPU.
+    this._texturePrefilteredSpecular = await Texture2D.load(
       'assets/env/Alexs_Apt_2k-specular-RGBM.png'
     );
 
-    if (this._textureprefilteredSpecular !== null) {
-      this._context.uploadTexture(this._textureprefilteredSpecular);
-      this._uniforms.prefilteredSpecular = this._textureprefilteredSpecular;
+    if (this._texturePrefilteredSpecular !== null) {
+      this._context.uploadTexture(this._texturePrefilteredSpecular);
+      // You can then use it directly as a uniform:
+      this._uniforms.prefilteredSpecular = this._texturePrefilteredSpecular;
     }
+
+    // Example showing how to load a texture and upload it to GPU.
+    this._textureIronColor = await Texture2D.load(
+      'assets/textures/rusted_iron/rustediron2_basecolor.png'
+    );
+
+    if (this._textureIronColor !== null) {
+      this._context.uploadTexture(this._textureIronColor);
+      // You can then use it directly as a uniform:
+      this._uniforms.ironColor = this._textureIronColor;
+    }
+
+    // Example showing how to load a texture and upload it to GPU.
+    this._textureIronNormal = await Texture2D.load(
+      'assets/textures/rusted_iron/rustediron2_normal.png'
+    );
+
+    if (this._textureIronNormal !== null) {
+      this._context.uploadTexture(this._textureIronNormal);
+      // You can then use it directly as a uniform:
+      this._uniforms.ironNormal = this._textureIronNormal;
+    }
+
+    // Example showing how to load a texture and upload it to GPU.
+    this._textureIronRoughness = await Texture2D.load(
+      'assets/textures/rusted_iron/rustediron2_roughness.png'
+    );
+
+    if (this._textureIronRoughness !== null) {
+      this._context.uploadTexture(this._textureIronRoughness);
+      // You can then use it directly as a uniform:
+      this._uniforms.ironRoughness = this._textureIronRoughness;
+    }
+
+    // Example showing how to load a texture and upload it to GPU.
+    this._textureIronMetallic = await Texture2D.load(
+      'assets/textures/rusted_iron/rustediron2_metallic.png'
+    );
+
+    if (this._textureIronMetallic !== null) {
+      this._context.uploadTexture(this._textureIronMetallic);
+      // You can then use it directly as a uniform:
+      this._uniforms.ironMetallic = this._textureIronMetallic;
+    }
+
+    // Compute the diffuse texture.
+    this._textureComputeDiffuse = await generator.computeDiffuse(new DiffuseShader(), 512, 512);
+    if (this._textureComputeDiffuse !== null) {
+      // You can then use it directly as a uniform:
+      this._uniforms.diffuse_gen_texture = this._textureComputeDiffuse;
+    }
+
+    generator.clear_texture();
 
     // Event handlers (mouse and keyboard)
     canvas.addEventListener('keydown', this.onKeyDown, true);
@@ -210,6 +295,13 @@ class Application {
     // Set the light intensity.
     this._uniforms['uLight.intensity'] = this._pointLight.intensity;
 
+    // Set the boolean for the ponctual lights.
+    this._uniforms['ponctualLights_option'] = this._ponctualLights_option;
+    // Set the boolean for the texture pbr.
+    this._uniforms['texture_pbr_option'] = this._texture_pbr_option;
+    // Set the boolean for the image based lighting.
+    this._uniforms['imageBasedLighting_option'] = this._imageBasedLighting_option;
+
     // Array of roughness values to test.
     let roughnessValues = [0.0025, 0.04, 0.16, 0.36, 0.64];
     // Array of metallic values to test.
@@ -251,6 +343,9 @@ class Application {
     gui.add(this._camera.position, '0', -5.0, 5.0).name('camera x');
     gui.add(this._camera.position, '1', -5.0, 5.0).name('camera y');
     gui.add(this._camera.position, '2', -5.0, 5.0).name('camera z');
+    gui.add(this, '_ponctualLights_option').name('Ponctual Lights');
+    gui.add(this, '_texture_pbr_option').name('Texture PBR');
+    gui.add(this, '_imageBasedLighting_option').name('IBL');
     return gui;
   }
 
