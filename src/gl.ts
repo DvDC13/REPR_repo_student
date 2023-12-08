@@ -1,4 +1,5 @@
 import { Geometry } from './geometries/geometry';
+import { DiffuseShader } from './shader/diffuse-gen-shader';
 import { Shader } from './shader/shader';
 import { Texture, Texture2D } from './textures/texture';
 import { PixelArray, UniformType } from './types';
@@ -120,6 +121,24 @@ export class GLContext {
     } else {
       gl.disable(gl.DEPTH_TEST);
     }
+    return this;
+  }
+
+  /**
+   * Use a given [[Shader]] instance.
+   * @param shader - The [[Shader]] instance to use
+   * @return This instance, for chaining
+   */
+  public useProgram(shader: DiffuseShader): this {
+    const gl = this._gl;
+    const cache = this._programs.get(shader);
+    if (cache === undefined) {
+      console.error('Attempting to use a non-compiled program.');
+      return this;
+    } else if (cache === null) {
+      return this;
+    }
+    gl.useProgram(cache.programObjectGL);
     return this;
   }
 
@@ -281,14 +300,6 @@ export class GLContext {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, texture.wrapS);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, texture.wrapT);
     this._textures.set(texture, { glObject });
-  }
-
-  /**
-   * Returns the textures cache.
-   * @returns The textures cache
-   */
-  public getTextures(): WeakMap<Texture, TextureCache>  {
-    return this._textures;
   }
 
   /**

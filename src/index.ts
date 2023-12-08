@@ -7,8 +7,8 @@ import { Texture, Texture2D } from './textures/texture';
 import { PixelArray, UniformType } from './types';
 import { SphereGeometry } from './geometries/sphere';
 import { PointLight } from './lights/lights';
-import { IBLGen } from './ibl_gen';
 import { DiffuseShader } from './shader/diffuse-gen-shader';
+import { TriangleGeometry } from './geometries/triangle';
 
 interface GUIProperties {
   albedo: number[];
@@ -29,6 +29,7 @@ class Application {
 
   private _shader: PBRShader;
   private _geometry_sphere: SphereGeometry;
+  private _geometry_triangle: TriangleGeometry;
   private _uniforms: Record<string, UniformType | Texture>;
 
   private _grid_size: number;
@@ -44,11 +45,12 @@ class Application {
   private _textureIronRoughness: Texture2D<HTMLElement> | null;
   private _textureIronMetallic: Texture2D<HTMLElement> | null;
 
-  private _textureComputeDiffuse: Texture2D<PixelArray> | null;
+  private _diffuse_texture: Texture2D<PixelArray> | null;
 
   private _ponctualLights_option : boolean;
   private _texture_pbr_option : boolean;
   private _imageBasedLighting_option : boolean;
+  private _imageBasedLighting_diffuse_gen_option : boolean;
 
   private _camera: Camera;
 
@@ -88,7 +90,10 @@ class Application {
       'ponctualLights_option': false,
       'texture_pbr_option': false,
       'imageBasedLighting_option': false,
+      'imageBasedLighting_diffuse_gen_option': false,
     };
+
+    this._geometry_triangle = new TriangleGeometry();
 
     let lights = [
       {
@@ -129,11 +134,12 @@ class Application {
     this._textureIronRoughness = null;
     this._textureIronMetallic = null;
 
-    this._textureComputeDiffuse = null;
+    this._diffuse_texture = null;
 
     this._ponctualLights_option = false;
     this._texture_pbr_option = false;
     this._imageBasedLighting_option = false;
+    this._imageBasedLighting_diffuse_gen_option = false;
 
     this._shader.pointLightCount = 4;
 
@@ -149,9 +155,8 @@ class Application {
    */
   async init() {
     this._context.uploadGeometry(this._geometry_sphere);
+    this._context.uploadGeometry(this._geometry_triangle);
     this._context.compileProgram(this._shader);
-
-    let generator = new IBLGen(this._context, this._camera);
     
     // Example showing how to load a texture and upload it to GPU.
     this._textureBrdfPreInt = await Texture2D.load(
@@ -229,13 +234,72 @@ class Application {
     }
 
     // Compute the diffuse texture.
-    this._textureComputeDiffuse = await generator.computeDiffuse(new DiffuseShader(), 512, 512);
-    if (this._textureComputeDiffuse !== null) {
-      // You can then use it directly as a uniform:
-      this._uniforms.diffuse_gen_texture = this._textureComputeDiffuse;
+    const targetTextureWidth = 256;
+    const targetTextureHeight = 256;
+    const targetTexture = this._context.gl.createTexture();
+    this._context.gl.bindTexture(this._context.gl.TEXTURE_2D, targetTexture);
+
+    {
+      const level = 0;
+      const internalFormat = this._context.gl.RGBA;
+      const border = 0;
+      const format = this._context.gl.RGBA;
+      const type = this._context.gl.UNSIGNED_BYTE;
+      const data = null;
+      this._context.gl.texImage2D(this._context.gl.TEXTURE_2D, level, internalFormat,
+        targetTextureWidth, targetTextureHeight, border,
+        format, type, data);
+
+      // Set the parameters so we can render any size image.
+      this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_MIN_FILTER, this._context.gl.LINEAR);
+      this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_WRAP_S, this._context.gl.CLAMP_TO_EDGE);
+      this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_WRAP_T, this._context.gl.CLAMP_TO_EDGE);
     }
 
-    generator.clear_texture();
+    const fb = this._context.gl.createFramebuffer();
+    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, fb);
+
+    // attach the texture as the first color attachment
+    const attachmentPoint = this._context.gl.COLOR_ATTACHMENT0;
+    this._context.gl.framebufferTexture2D(this._context.gl.FRAMEBUFFER, attachmentPoint, this._context.gl.TEXTURE_2D, targetTexture, 0);
+
+    this._context.gl.viewport(0, 0, targetTextureWidth, targetTextureHeight);
+
+    // Define diffuse shader.
+    const diffuseShader = new DiffuseShader();
+    this._context.compileProgram(diffuseShader);
+    this._context.useProgram(diffuseShader);
+
+    // Draw the triangles.
+    this._context.draw(this._geometry_triangle, diffuseShader, {});
+
+    // Check framebuffer completeness.
+    const framebufferStatus = this._context.gl.checkFramebufferStatus(this._context.gl.FRAMEBUFFER);
+    if (framebufferStatus !== this._context.gl.FRAMEBUFFER_COMPLETE) {
+      console.error("Framebuffer is not complete:", framebufferStatus);
+    }
+
+    // Create a texture.
+    this._diffuse_texture = new Texture2D<PixelArray>(
+      new Uint8Array(targetTextureWidth * targetTextureHeight * 4),
+      targetTextureWidth,
+      targetTextureHeight,
+      this._context.gl.RGBA,
+      this._context.gl.RGBA8,
+      this._context.gl.UNSIGNED_BYTE
+    );
+
+    // Read the pixels.
+    this._context.gl.readPixels(0, 0, targetTextureWidth, targetTextureHeight, this._context.gl.RGBA, this._context.gl.UNSIGNED_BYTE, this._diffuse_texture.data);
+
+    this._context.gl.viewport(0, 0, this._context.gl.drawingBufferWidth, this._context.gl.drawingBufferHeight);
+
+    // Upload the texture to the GPU.
+    this._context.uploadTexture(this._diffuse_texture);
+    this._uniforms.diffuseTexture = this._diffuse_texture;
+    
+    this._context.gl.deleteFramebuffer(fb);
+    this._context.gl.deleteTexture(targetTexture);
 
     // Event handlers (mouse and keyboard)
     canvas.addEventListener('keydown', this.onKeyDown, true);
@@ -301,12 +365,15 @@ class Application {
     this._uniforms['texture_pbr_option'] = this._texture_pbr_option;
     // Set the boolean for the image based lighting.
     this._uniforms['imageBasedLighting_option'] = this._imageBasedLighting_option;
+    // Set the boolean for the image based lighting diffuse gen.
+    this._uniforms['imageBasedLighting_diffuse_gen_option'] = this._imageBasedLighting_diffuse_gen_option;
 
     // Array of roughness values to test.
     let roughnessValues = [0.0025, 0.04, 0.16, 0.36, 0.64];
     // Array of metallic values to test.
     let metallicValues = [0.0, 0.2, 0.4, 0.6, 0.8];
 
+    // Draw the spheres.
     let grid_size_half = Math.floor(this._grid_size / 2);
     for (let i = -grid_size_half; i <= grid_size_half; i++)
     {
@@ -346,6 +413,7 @@ class Application {
     gui.add(this, '_ponctualLights_option').name('Ponctual Lights');
     gui.add(this, '_texture_pbr_option').name('Texture PBR');
     gui.add(this, '_imageBasedLighting_option').name('IBL');
+    gui.add(this, '_imageBasedLighting_diffuse_gen_option').name('IBL Diffuse Gen');
     return gui;
   }
 

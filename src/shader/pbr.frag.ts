@@ -14,6 +14,7 @@ out vec4 outFragColor;
   uniform sampler2D ironNormal;
   uniform sampler2D ironRoughness;
   uniform sampler2D ironMetallic;
+  uniform sampler2D diffuseTexture;
 #endif
 
 in vec3 vWsNormal;
@@ -26,6 +27,7 @@ uniform float metallic;
 uniform bool ponctualLights_option;
 uniform bool texture_pbr_option;
 uniform bool imageBasedLighting_option;
+uniform bool imageBasedLighting_diffuse_gen_option;
 
 struct PointLight
 {
@@ -271,6 +273,34 @@ void imageBasedLighting()
   outFragColor.rgba = LinearTosRGB(vec4(reinhard(irradiance), 1.0));
 }
 
+void imageBasedLighting_generation()
+{
+  vec3 albedo = sRGBToLinear(vec4(uMaterial.albedo, 1.0)).rgb;
+
+  vec3 N = normalize(vWsNormal);
+  vec3 V = normalize(camPosition - worldPosition);
+
+  vec3 F0 = mix(vec3(0.04), albedo, metallic);
+  vec3 F = F_Schlick(max(dot(N, V), 0.0), F0);
+
+  vec3 kS = F;
+  vec3 kD = vec3(1.0) - kS;
+  kD *= 1.0 - metallic;
+
+  // Diffuse 
+  vec3 diffuseBRDFEval = kD * albedo * DecodeRGBM(texture(diffuseTexture, polarToEquirectangular(cartesianToPolar(N))));
+
+  // Specular
+  vec3 reflected = reflect(-V, N);
+  vec3 prefilteredSpec = computeUVFromRoughness(reflected, roughness);
+  vec2 brdf =  sRGBToLinear(texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness))).xy;
+  vec3 specularBRDFEval = prefilteredSpec * (kS * brdf.x + brdf.y);
+
+  vec3 irradiance = (diffuseBRDFEval + specularBRDFEval);
+
+  outFragColor.rgba = LinearTosRGB(vec4(reinhard(irradiance), 1.0));
+}
+
 void main()
 {
   if (ponctualLights_option)
@@ -284,6 +314,10 @@ void main()
   else if (imageBasedLighting_option)
   {
     imageBasedLighting();
+  }
+  else if (imageBasedLighting_diffuse_gen_option)
+  {
+    imageBasedLighting_generation();
   }
 }
 `;
