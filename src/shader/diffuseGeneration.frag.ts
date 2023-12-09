@@ -1,7 +1,7 @@
 export default `
 precision highp float;
 
-uniform sampler2D diffuse_gen_texture;
+uniform sampler2D texture_env;
 
 in vec3 worldPosition;
 
@@ -29,7 +29,7 @@ void main()
             vec3 tangentSample = vec3(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
             vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * N;
 
-            irradiance += texture(diffuse_gen_texture, sampleVec.xy * 0.5 + 0.5).rgb * cos(theta) * sin(theta);
+            irradiance += texture(texture_env, sampleVec.xy * 0.5 + 0.5).rgb * cos(theta) * sin(theta);
             nrSamples++;
         }
     }

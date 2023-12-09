@@ -28,6 +28,7 @@ class Application {
   private _context: GLContext;
 
   private _shader: PBRShader;
+  private _diffuseShader: DiffuseShader;
   private _geometry_sphere: SphereGeometry;
   private _geometry_triangle: TriangleGeometry;
   private _uniforms: Record<string, UniformType | Texture>;
@@ -35,6 +36,8 @@ class Application {
   private _grid_size: number;
 
   private _pointLight: PointLight;
+
+  private _framebuffer: WebGLFramebuffer | null;
 
   private _textureBrdfPreInt: Texture2D<HTMLElement> | null;
   private _texturePrefilteredDiffuse: Texture2D<HTMLElement> | null;
@@ -45,7 +48,8 @@ class Application {
   private _textureIronRoughness: Texture2D<HTMLElement> | null;
   private _textureIronMetallic: Texture2D<HTMLElement> | null;
 
-  private _diffuse_texture: Texture2D<PixelArray> | null;
+  private _texture_env: Texture2D<HTMLElement> | null;
+  private _texture_env_diffuse: Texture2D<PixelArray> | null;
 
   private _ponctualLights_option : boolean;
   private _texture_pbr_option : boolean;
@@ -95,6 +99,8 @@ class Application {
 
     this._geometry_triangle = new TriangleGeometry();
 
+    this._framebuffer = null;
+
     let lights = [
       {
         position: vec3.fromValues(-10.0, 10.0, 10.0),
@@ -124,6 +130,8 @@ class Application {
       this._uniforms['uLight[' + index + '].intensity'] = light.intensity;
     }
 
+    this._diffuseShader = new DiffuseShader();
+
     this._shader = new PBRShader();
     this._textureBrdfPreInt = null;
     this._texturePrefilteredDiffuse = null;
@@ -134,7 +142,8 @@ class Application {
     this._textureIronRoughness = null;
     this._textureIronMetallic = null;
 
-    this._diffuse_texture = null;
+    this._texture_env = null;
+    this._texture_env_diffuse = null;
 
     this._ponctualLights_option = false;
     this._texture_pbr_option = false;
@@ -156,6 +165,7 @@ class Application {
   async init() {
     this._context.uploadGeometry(this._geometry_sphere);
     this._context.uploadGeometry(this._geometry_triangle);
+    
     this._context.compileProgram(this._shader);
     
     // Example showing how to load a texture and upload it to GPU.
@@ -233,11 +243,29 @@ class Application {
       this._uniforms.ironMetallic = this._textureIronMetallic;
     }
 
+    this._texture_env = await Texture2D.load(
+      'assets/output-RGBM.png'
+    );
+
+    if (this._texture_env !== null) {
+      this._context.uploadTexture(this._texture_env);
+      // You can then use it directly as a uniform:
+      this._uniforms.texture_env = this._texture_env;
+    }
+
     // Compute the diffuse texture.
     const targetTextureWidth = 256;
     const targetTextureHeight = 256;
-    const targetTexture = this._context.gl.createTexture();
-    this._context.gl.bindTexture(this._context.gl.TEXTURE_2D, targetTexture);
+    this._texture_env_diffuse = new Texture2D<PixelArray>(
+      new Uint8Array(targetTextureWidth * targetTextureHeight * 4),
+      targetTextureWidth,
+      targetTextureHeight,
+      this._context.gl.RGBA,
+      this._context.gl.RGBA,
+      this._context.gl.UNSIGNED_BYTE
+    );
+
+    this._context.uploadTexture(this._texture_env_diffuse);
 
     {
       const level = 0;
@@ -256,50 +284,51 @@ class Application {
       this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_WRAP_T, this._context.gl.CLAMP_TO_EDGE);
     }
 
-    const fb = this._context.gl.createFramebuffer();
-    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, fb);
+    this._framebuffer = this._context.gl.createFramebuffer();
+    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, this._framebuffer);
 
     // attach the texture as the first color attachment
     const attachmentPoint = this._context.gl.COLOR_ATTACHMENT0;
-    this._context.gl.framebufferTexture2D(this._context.gl.FRAMEBUFFER, attachmentPoint, this._context.gl.TEXTURE_2D, targetTexture, 0);
+    var textureObject = this._context.getTextures().get(this._texture_env_diffuse)?.glObject;
 
-    this._context.gl.viewport(0, 0, targetTextureWidth, targetTextureHeight);
-
-    // Define diffuse shader.
-    const diffuseShader = new DiffuseShader();
-    this._context.compileProgram(diffuseShader);
-    this._context.useProgram(diffuseShader);
-
-    // Draw the triangles.
-    this._context.draw(this._geometry_triangle, diffuseShader, {});
-
-    // Check framebuffer completeness.
-    const framebufferStatus = this._context.gl.checkFramebufferStatus(this._context.gl.FRAMEBUFFER);
-    if (framebufferStatus !== this._context.gl.FRAMEBUFFER_COMPLETE) {
-      console.error("Framebuffer is not complete:", framebufferStatus);
+    if (textureObject === undefined) {
+      throw new Error('Texture not found');
     }
 
-    // Create a texture.
-    this._diffuse_texture = new Texture2D<PixelArray>(
-      new Uint8Array(targetTextureWidth * targetTextureHeight * 4),
-      targetTextureWidth,
-      targetTextureHeight,
-      this._context.gl.RGBA,
-      this._context.gl.RGBA8,
-      this._context.gl.UNSIGNED_BYTE
-    );
+    this._context.gl.framebufferTexture2D(this._context.gl.FRAMEBUFFER, attachmentPoint, this._context.gl.TEXTURE_2D, textureObject, 0);
 
-    // Read the pixels.
-    this._context.gl.readPixels(0, 0, targetTextureWidth, targetTextureHeight, this._context.gl.RGBA, this._context.gl.UNSIGNED_BYTE, this._diffuse_texture.data);
+    this._context.gl.viewport(0, 0, targetTextureWidth, targetTextureHeight);
+    this._context.gl.clear(this._context.gl.COLOR_BUFFER_BIT | this._context.gl.DEPTH_BUFFER_BIT)
 
+    // Compile the diffuse shader.
+    this._context.compileProgram(this._diffuseShader);
+
+    // Use the diffuse shader.
+    this._context.useProgram(this._diffuseShader);
+
+    // Draw the triangle.
+    this._context.draw(this._geometry_triangle, this._diffuseShader, this._uniforms);
+
+    // Unbind the framebuffer, and set the viewport back to the canvas size.
+    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, null);
+
+    // Set the viewport to the canvas size.
     this._context.gl.viewport(0, 0, this._context.gl.drawingBufferWidth, this._context.gl.drawingBufferHeight);
 
-    // Upload the texture to the GPU.
-    this._context.uploadTexture(this._diffuse_texture);
-    this._uniforms.diffuseTexture = this._diffuse_texture;
-    
-    this._context.gl.deleteFramebuffer(fb);
-    this._context.gl.deleteTexture(targetTexture);
+    // Set the diffuse texture.
+    if (this._texture_env_diffuse !== null) {
+      this._uniforms.texture_env_diffuse = this._texture_env_diffuse;
+    }
+
+    console.log(this._uniforms.brdfPreInt);
+    console.log(this._uniforms.prefilteredDiffuse);
+    console.log(this._uniforms.prefilteredSpecular);
+    console.log(this._uniforms.ironColor);
+    console.log(this._uniforms.ironNormal);
+    console.log(this._uniforms.ironRoughness);
+    console.log(this._uniforms.ironMetallic);
+    console.log(this._uniforms.texture_env);
+    console.log(this._uniforms.texture_env_diffuse);
 
     // Event handlers (mouse and keyboard)
     canvas.addEventListener('keydown', this.onKeyDown, true);
@@ -367,6 +396,10 @@ class Application {
     this._uniforms['imageBasedLighting_option'] = this._imageBasedLighting_option;
     // Set the boolean for the image based lighting diffuse gen.
     this._uniforms['imageBasedLighting_diffuse_gen_option'] = this._imageBasedLighting_diffuse_gen_option;
+
+    if (this._imageBasedLighting_diffuse_gen_option) {
+      this._context.gl.clear(this._context.gl.COLOR_BUFFER_BIT | this._context.gl.DEPTH_BUFFER_BIT)
+    }
 
     // Array of roughness values to test.
     let roughnessValues = [0.0025, 0.04, 0.16, 0.36, 0.64];

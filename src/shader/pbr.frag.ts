@@ -14,7 +14,7 @@ out vec4 outFragColor;
   uniform sampler2D ironNormal;
   uniform sampler2D ironRoughness;
   uniform sampler2D ironMetallic;
-  uniform sampler2D diffuseTexture;
+  uniform sampler2D texture_env_diffuse;
 #endif
 
 in vec3 vWsNormal;
@@ -288,7 +288,7 @@ void imageBasedLighting_generation()
   kD *= 1.0 - metallic;
 
   // Diffuse 
-  vec3 diffuseBRDFEval = kD * albedo * DecodeRGBM(texture(diffuseTexture, polarToEquirectangular(cartesianToPolar(N))));
+  vec3 diffuseBRDFEval = kD * albedo * DecodeRGBM(texture(texture_env_diffuse, polarToEquirectangular(cartesianToPolar(N))));
 
   // Specular
   vec3 reflected = reflect(-V, N);

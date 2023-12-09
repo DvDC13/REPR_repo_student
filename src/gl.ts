@@ -88,6 +88,13 @@ export class GLContext {
   }
 
   /**
+   * Get the textures
+   */
+  public getTextures(): WeakMap<Texture, TextureCache> {
+    return this._textures;
+  }
+
+  /**
    * Sets the GL culling.
    *
    * @param type - GL culling parameter. Using `null` will disable culling.
@@ -123,25 +130,7 @@ export class GLContext {
     }
     return this;
   }
-
-  /**
-   * Use a given [[Shader]] instance.
-   * @param shader - The [[Shader]] instance to use
-   * @return This instance, for chaining
-   */
-  public useProgram(shader: DiffuseShader): this {
-    const gl = this._gl;
-    const cache = this._programs.get(shader);
-    if (cache === undefined) {
-      console.error('Attempting to use a non-compiled program.');
-      return this;
-    } else if (cache === null) {
-      return this;
-    }
-    gl.useProgram(cache.programObjectGL);
-    return this;
-  }
-
+  
   /**
    * Compiles a given [[Shader]] instance.
    *
@@ -195,6 +184,29 @@ export class GLContext {
 
     return this;
   }
+
+  /**
+   * Binds a given [[Shader]] instance.
+   *
+   * ## Note
+   *
+   * Errors will be reported in the console.
+   *
+   * @param shader - The [[Shader]] instancce to compile
+   *
+   * @return This instance, for chaining
+   */
+  public useProgram(shader: Shader): this {
+    const programCache = this._programs.get(shader);
+    if (!programCache || !programCache.programObjectGL) {
+        console.error('Shader program is not available or not compiled.');
+        return this; // Or handle the error in a way that suits your application
+    }
+
+    this._gl.useProgram(programCache.programObjectGL);
+    return this;
+  }
+
 
   /**
    * Uploads a geometry to the GPU.
