@@ -269,10 +269,10 @@ void textureRustedIron_pbr()
   vec3 N = normalize(normal * 2.0 - 1.0);
 
   vec4 metallicTexture = texture(ironMetallic, vUv);
-  float metallic = metallicTexture.x;
+  float metallic = (metallicTexture.x + metallicTexture.y + metallicTexture.z) / 3.0;
 
   vec4 roughnessTexture = texture(ironRoughness, vUv);
-  float roughness = roughnessTexture.x;
+  float roughness = (roughnessTexture.x + roughnessTexture.y + roughnessTexture.z) / 3.0;
 
   vec3 irradiance = vec3(0.0);
   for (int i = 0; i < POINT_LIGHT_COUNT; i++)
