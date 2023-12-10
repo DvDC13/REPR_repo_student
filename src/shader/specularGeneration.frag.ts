@@ -3,7 +3,9 @@ precision highp float;
 
 uniform sampler2D texture_env;
 
-in vec3 worldPosition;
+in vec4 worldPosition;
+
+uniform float roughness;
 
 out vec4 outFragColor;
 
@@ -16,6 +18,32 @@ vec2 cartesianToPolar(vec3 cartesian) {
     // Compute polar angle, in [-PI/2, PI/2]
     float theta = asin(cartesian.y);
     return vec2(phi, theta);
+}
+
+// Convert a unit polar vector to cartesian coordinates
+vec3 polarToCartesian(vec2 uv) {
+    float theta = uv.x; // angle in radians
+    float r = uv.y;     // radius
+
+    float x = r * cos(theta);
+    float y = r * sin(theta);
+    //float z = sqrt(1.0 - x * x - y * y);
+    float z = 0.0;
+
+    return vec3(x, y, z);
+}
+
+float D_GGX(vec3 N, vec3 H, float roughness)
+{
+  float a = roughness * roughness;
+  float a2 = a * a;
+  float NoH = max(dot(N, H), 0.0);
+  float NoH2 = NoH * NoH;
+  
+  float nom = a2;
+  float denom = (NoH2 * (a2 - 1.0) + 1.0);
+
+  return nom / (M_PI * denom * denom);
 }
 
 float RadicalInverse_VdC(uint bits) 
@@ -52,39 +80,52 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
 	
     vec3 sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
     return normalize(sampleVec);
-} 
+}
 
-// // Image based specular
-// vec3 compute_specular(vec3 normal, float roughness)
-// {
-//   vec3 acc = vec3(0.0);
-//   vec3 w0 = normal;
-//   int N = 1000;
-//   for(int i = 0; i < N; ++i)
-//   {
-//     vec2 xi = Hammersley(float(i), float(N));
+vec4 PrefilterEnvMap(vec3 N, float roughness)
+{
+    vec3 acc = vec3(0.0);
 
-//     vec3 direction = importanceSampleGGX(xi, roughness, normal, w0);
-//     vec3 radiance = texture(texture_env, cartesianToPolar(direction)).rgb;
-//     acc += radiance;
-//   }
-//   acc /= float(N);
-//   return acc;
-// }
+    vec3 R = N;
+    vec3 V = R;
 
-// vec3 generate_mipmaps(vec2 uv)
-// {
-//   float level = min(8. - floor(log2(512. - gl_FragCoord.y)), 6.);
+    const uint sampleCount = 1024u;
+    float totalWeight = 0.0;
+    for(uint i = 0u; i < sampleCount; i++)
+    {
+        vec2 Xi = Hammersley(i, sampleCount);
+        vec3 H = ImportanceSampleGGX(Xi, N, roughness);
+        vec3 L = normalize(2.0 * dot(V, H) * H - V);
 
-//   uv.y *= pow(2., level + 1.);
-//   uv.x = mod(uv.x * pow(2., level), 1.);
+        float NdotL = max(dot(N, L), 0.0);
+        if (NdotL > 0.0)
+        {
+            float D = D_GGX(N, H, roughness);
+            float NdotH = max(dot(N, H), 0.0);
+            float HdotV = max(dot(H, V), 0.0);
+            float pdf = D * NdotH / (4.0 * HdotV) + 0.0001;
 
-//   return compute_specular(polarToCartesian(uv), min(level * 0.2, 1.));
-// }
+            float resolution = 512.0;
+            float saTexel = 4.0 * M_PI / (6.0 * resolution * resolution);
+            float saSample = 1.0 / (float(sampleCount) * pdf + 0.0001);
+
+            float mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
+
+            acc += textureLod(texture_env, cartesianToPolar(L), mipLevel).rgb * NdotL;
+            totalWeight += NdotL;
+        }
+    }
+
+    acc = acc / totalWeight;
+
+    return vec4(acc, 1.0);
+}
 
 void main()
 {
-//   outFragColor.rgba = generate_mipmaps(worldPosition.xy);
-    outFragColor.rgba = vec4(1.0);
+    vec2 uv = ((worldPosition.xy / worldPosition.w) + 1.0) * 0.5;
+    vec3 N = polarToCartesian(uv);
+
+    outFragColor.rgba = PrefilterEnvMap(N, roughness);
 }
 `;

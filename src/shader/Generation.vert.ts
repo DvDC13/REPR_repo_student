@@ -4,7 +4,7 @@ precision highp float;
 
 in vec3 in_position;
 
-out vec3 worldPosition;
+out vec4 worldPosition;
 
 void main()
 {
@@ -17,6 +17,6 @@ void main()
 
   gl_Position = vec4((uvs[gl_VertexID] * 2.0 - 1.0), 0.0, 1.0);
 
-  worldPosition = positionLocal.xyz;
+  worldPosition = positionLocal;
 }
 `;
