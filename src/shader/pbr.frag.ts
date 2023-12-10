@@ -365,7 +365,9 @@ void imageBasedLighting_generation()
   vec3 diffuseBRDFEval = kD * albedo * DecodeRGBM(texture(texture_env_diffuse, polarToEquirectangular(cartesianToPolar(N))));
 
   // Specular
-  vec3 specularBRDFEval = texture(texture_env_specular, polarToEquirectangular(cartesianToPolar(N))).rgb;
+  vec3 prefilteredSpec = texture(texture_env_specular, polarToEquirectangular(cartesianToPolar(N))).rgb;
+  vec2 brdf =  sRGBToLinear(texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness))).xy;
+  vec3 specularBRDFEval = prefilteredSpec * (kS * brdf.x + brdf.y);
 
   if (imageBasedLighting_diffuse_gen_option)
   {
