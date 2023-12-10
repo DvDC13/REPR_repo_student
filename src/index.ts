@@ -39,7 +39,8 @@ class Application {
 
   private _pointLight: PointLight;
 
-  private _framebuffer: WebGLFramebuffer | null;
+  private _framebuffer_diffuse: WebGLFramebuffer | null;
+  private _framebuffer_specular: WebGLFramebuffer | null;
 
   private _textureBrdfPreInt: Texture2D<HTMLElement> | null;
   private _texturePrefilteredDiffuse: Texture2D<HTMLElement> | null;
@@ -110,7 +111,8 @@ class Application {
 
     this._geometry_triangle = new TriangleGeometry();
 
-    this._framebuffer = null;
+    this._framebuffer_diffuse = null;
+    this._framebuffer_specular = null;
 
     let lights = [
       {
@@ -265,7 +267,7 @@ class Application {
     }
 
     this._texture_env = await Texture2D.load(
-      'assets/output-RGBM.png'
+      'assets/thatch_chapel_4k.png'
     );
 
     if (this._texture_env !== null) {
@@ -307,8 +309,8 @@ class Application {
       this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_WRAP_T, this._context.gl.CLAMP_TO_EDGE);
     }
 
-    this._framebuffer = this._context.gl.createFramebuffer();
-    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, this._framebuffer);
+    this._framebuffer_diffuse = this._context.gl.createFramebuffer();
+    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, this._framebuffer_diffuse);
 
     // attach the texture as the first color attachment
     const attachmentPoint = this._context.gl.COLOR_ATTACHMENT0;
@@ -375,8 +377,8 @@ class Application {
       this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_WRAP_T, this._context.gl.CLAMP_TO_EDGE);
     }
 
-    this._framebuffer = this._context.gl.createFramebuffer();
-    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, this._framebuffer);
+    this._framebuffer_specular = this._context.gl.createFramebuffer();
+    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, this._framebuffer_specular);
 
     // attach the texture as the first color attachment
     const attachmentPoint2 = this._context.gl.COLOR_ATTACHMENT0;
@@ -492,7 +494,6 @@ class Application {
     this._uniforms['imageBasedLighting_specular_gen_option'] = this._imageBasedLighting_specular_gen_option;
     // Set the boolean for the image based lighting gen.
     this._uniforms['imageBasedLighting_gen_option'] = this._imageBasedLighting_gen_option;
-
 
     // Array of roughness values to test.
     let roughnessValues = [0.0025, 0.04, 0.16, 0.36, 0.64];
