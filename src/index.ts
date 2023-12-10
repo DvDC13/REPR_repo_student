@@ -8,6 +8,7 @@ import { PixelArray, UniformType } from './types';
 import { SphereGeometry } from './geometries/sphere';
 import { PointLight } from './lights/lights';
 import { DiffuseShader } from './shader/diffuse-gen-shader';
+import { SpecularShader } from './shader/specular-gen-shader';
 import { TriangleGeometry } from './geometries/triangle';
 
 interface GUIProperties {
@@ -29,6 +30,7 @@ class Application {
 
   private _shader: PBRShader;
   private _diffuseShader: DiffuseShader;
+  private _specularShader: SpecularShader;
   private _geometry_sphere: SphereGeometry;
   private _geometry_triangle: TriangleGeometry;
   private _uniforms: Record<string, UniformType | Texture>;
@@ -50,6 +52,7 @@ class Application {
 
   private _texture_env: Texture2D<HTMLElement> | null;
   private _texture_env_diffuse: Texture2D<PixelArray> | null;
+  private _texture_env_specular: Texture2D<PixelArray> | null;
 
   private _lambertian_diffuse_option : boolean;
   private _burley_diffuse_option : boolean;
@@ -61,6 +64,8 @@ class Application {
   private _imageBasedLighting_specular_option : boolean;
   private _imageBasedLighting_option : boolean;
   private _imageBasedLighting_diffuse_gen_option : boolean;
+  private _imageBasedLighting_specular_gen_option : boolean;
+  private _imageBasedLighting_gen_option : boolean;
 
   private _camera: Camera;
 
@@ -137,6 +142,7 @@ class Application {
     }
 
     this._diffuseShader = new DiffuseShader();
+    this._specularShader = new SpecularShader();
 
     this._shader = new PBRShader();
     this._textureBrdfPreInt = null;
@@ -150,6 +156,7 @@ class Application {
 
     this._texture_env = null;
     this._texture_env_diffuse = null;
+    this._texture_env_specular = null;
 
     this._lambertian_diffuse_option = false;
     this._burley_diffuse_option = false;
@@ -161,6 +168,8 @@ class Application {
     this._imageBasedLighting_specular_option = false;
     this._imageBasedLighting_option = false;
     this._imageBasedLighting_diffuse_gen_option = false;
+    this._imageBasedLighting_specular_gen_option = false;
+    this._imageBasedLighting_gen_option = false;
 
     this._shader.pointLightCount = 4;
 
@@ -265,7 +274,9 @@ class Application {
       this._uniforms.texture_env = this._texture_env;
     }
 
+    // **************************** //
     // Compute the diffuse texture.
+    // **************************** //
     const targetTextureWidth = 256;
     const targetTextureHeight = 256;
     this._texture_env_diffuse = new Texture2D<PixelArray>(
@@ -330,6 +341,73 @@ class Application {
     // Set the diffuse texture.
     if (this._texture_env_diffuse !== null) {
       this._uniforms.texture_env_diffuse = this._texture_env_diffuse;
+    }
+
+    // **************************** //
+    // Compute the specular texture.
+    // **************************** //
+
+    this._texture_env_specular = new Texture2D<PixelArray>(
+      new Uint8Array(targetTextureWidth * targetTextureHeight * 4),
+      targetTextureWidth,
+      targetTextureHeight,
+      this._context.gl.RGBA,
+      this._context.gl.RGBA,
+      this._context.gl.UNSIGNED_BYTE
+    );
+
+    this._context.uploadTexture(this._texture_env_specular);
+
+    {
+      const level = 0;
+      const internalFormat = this._context.gl.RGBA;
+      const border = 0;
+      const format = this._context.gl.RGBA;
+      const type = this._context.gl.UNSIGNED_BYTE;
+      const data = null;
+      this._context.gl.texImage2D(this._context.gl.TEXTURE_2D, level, internalFormat,
+        targetTextureWidth, targetTextureHeight, border,
+        format, type, data);
+
+      // Set the parameters so we can render any size image.
+      this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_MIN_FILTER, this._context.gl.LINEAR);
+      this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_WRAP_S, this._context.gl.CLAMP_TO_EDGE);
+      this._context.gl.texParameteri(this._context.gl.TEXTURE_2D, this._context.gl.TEXTURE_WRAP_T, this._context.gl.CLAMP_TO_EDGE);
+    }
+
+    this._framebuffer = this._context.gl.createFramebuffer();
+    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, this._framebuffer);
+
+    // attach the texture as the first color attachment
+    const attachmentPoint2 = this._context.gl.COLOR_ATTACHMENT0;
+    var textureObject2 = this._context.getTextures().get(this._texture_env_specular)?.glObject;
+
+    if (textureObject2 === undefined) {
+      throw new Error('Texture not found');
+    }
+
+    this._context.gl.framebufferTexture2D(this._context.gl.FRAMEBUFFER, attachmentPoint2, this._context.gl.TEXTURE_2D, textureObject2, 0);
+
+    this._context.gl.viewport(0, 0, targetTextureWidth, targetTextureHeight);
+
+    // Compile the specular shader.
+    this._context.compileProgram(this._specularShader);
+
+    // Use the specular shader.
+    this._context.useProgram(this._specularShader);
+
+    // Draw the triangle.
+    this._context.draw(this._geometry_triangle, this._specularShader, this._uniforms);
+
+    // Unbind the framebuffer, and set the viewport back to the canvas size.
+    this._context.gl.bindFramebuffer(this._context.gl.FRAMEBUFFER, null);
+
+    // Set the viewport to the canvas size.
+    this._context.gl.viewport(0, 0, this._context.gl.drawingBufferWidth, this._context.gl.drawingBufferHeight);
+
+    // Set the specular texture.
+    if (this._texture_env_specular !== null) {
+      this._uniforms.texture_env_specular = this._texture_env_specular;
     }
 
     // Event handlers (mouse and keyboard)
@@ -410,6 +488,11 @@ class Application {
     this._uniforms['imageBasedLighting_option'] = this._imageBasedLighting_option;
     // Set the boolean for the image based lighting diffuse gen.
     this._uniforms['imageBasedLighting_diffuse_gen_option'] = this._imageBasedLighting_diffuse_gen_option;
+    // Set the boolean for the image based lighting specular gen.
+    this._uniforms['imageBasedLighting_specular_gen_option'] = this._imageBasedLighting_specular_gen_option;
+    // Set the boolean for the image based lighting gen.
+    this._uniforms['imageBasedLighting_gen_option'] = this._imageBasedLighting_gen_option;
+
 
     // Array of roughness values to test.
     let roughnessValues = [0.0025, 0.04, 0.16, 0.36, 0.64];
@@ -463,6 +546,8 @@ class Application {
     gui.add(this, '_imageBasedLighting_specular_option').name('IBL Specular');
     gui.add(this, '_imageBasedLighting_option').name('IBL Total');
     gui.add(this, '_imageBasedLighting_diffuse_gen_option').name('IBL Diffuse Gen');
+    gui.add(this, '_imageBasedLighting_specular_gen_option').name('IBL Specular Gen');
+    gui.add(this, '_imageBasedLighting_gen_option').name('IBL Total Gen');
     return gui;
   }
 

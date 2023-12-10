@@ -15,6 +15,7 @@ out vec4 outFragColor;
   uniform sampler2D ironRoughness;
   uniform sampler2D ironMetallic;
   uniform sampler2D texture_env_diffuse;
+  uniform sampler2D texture_env_specular;
 #endif
 
 in vec3 vWsNormal;
@@ -34,6 +35,8 @@ uniform bool imageBasedLighting_diffuse_option;
 uniform bool imageBasedLighting_specular_option;
 uniform bool imageBasedLighting_option;
 uniform bool imageBasedLighting_diffuse_gen_option;
+uniform bool imageBasedLighting_specular_gen_option;
+uniform bool imageBasedLighting_gen_option;
 
 struct PointLight
 {
@@ -371,7 +374,11 @@ void imageBasedLighting_generation()
   {
     outFragColor.rgba = LinearTosRGB(vec4(reinhard(diffuseBRDFEval), 1.0));
   }
-  else
+  else if (imageBasedLighting_specular_gen_option)
+  {
+    outFragColor.rgba = LinearTosRGB(vec4(reinhard(specularBRDFEval), 1.0));
+  }
+  else if (imageBasedLighting_gen_option)
   {
     outFragColor.rgba = LinearTosRGB(vec4(reinhard(diffuseBRDFEval + specularBRDFEval), 1.0));
   }
@@ -416,6 +423,14 @@ void main()
     imageBasedLighting();
   }
   else if (imageBasedLighting_diffuse_gen_option)
+  {
+    imageBasedLighting_generation();
+  }
+  else if (imageBasedLighting_specular_gen_option)
+  {
+    imageBasedLighting_generation();
+  }
+  else if (imageBasedLighting_gen_option)
   {
     imageBasedLighting_generation();
   }
