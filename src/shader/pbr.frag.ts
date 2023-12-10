@@ -24,8 +24,14 @@ in vec3 worldPosition;
 uniform float roughness;
 uniform float metallic;
 
+uniform bool lambertian_diffuse_option;
+uniform bool burley_diffuse_option;
+uniform bool oren_nayar_diffuse_option;
+uniform bool cook_torrance_specular_option;
 uniform bool ponctualLights_option;
 uniform bool texture_pbr_option;
+uniform bool imageBasedLighting_diffuse_option;
+uniform bool imageBasedLighting_specular_option;
 uniform bool imageBasedLighting_option;
 uniform bool imageBasedLighting_diffuse_gen_option;
 
@@ -109,6 +115,37 @@ vec3 Diffuse_Lambert(vec3 albedo)
   return albedo / M_PI;
 }
 
+vec3 Diffuse_burley(vec3 albedo, float NdotL, float NdotV, float LdotH, float roughness)
+{
+  float f90 = 0.5 + 2.0 * roughness * LdotH * LdotH;
+  float lightScatter = 1.0 + (f90 - 1.0) * pow(1.0 - NdotL, 5.0);
+  float viewScatter = 1.0 + (f90 - 1.0) * pow(1.0 - NdotV, 5.0);
+  return (1.0 / M_PI) * lightScatter * viewScatter * albedo;
+}
+
+vec3 Fd_OrenNayar(float LoE, float NoE, float NoL, float roughness, vec3 albedo)
+{
+  float s = LoE - NoL * NoE;
+  float t = mix(1.0, max(NoL, NoE), step(0.0, s));
+
+  vec3 A = 1.0 + roughness * (albedo / (roughness + 0.13) + 0.5 / (roughness + 0.33));
+  float B = 0.45 * roughness / (roughness + 0.09);
+
+  return albedo * max(0.0, NoL) * (A + B * s / t) / M_PI;
+}
+
+vec3 Diffuse_OrenNayar(vec3 albedo, float NdotL, float NdotV, float LdotV, float roughness)
+{
+  float sigma = roughness * roughness;
+  float s = LdotV - NdotL * NdotV;
+  float t = mix(1.0, max(NdotL, NdotV), step(0.0, s));
+
+  vec3 A = 1.0 - (0.5 * (sigma / (sigma + 0.33))) + (0.17 * albedo * (sigma / (sigma + 0.13)));
+  float B = 0.45 * (sigma / (sigma + 0.09));
+
+  return albedo * max(0.0, NdotL) * (A + B * s / t) / M_PI;
+}
+
 float D_GGX(vec3 N, vec3 H, float roughness)
 {
   float a = roughness * roughness;
@@ -190,9 +227,30 @@ void ponctualLights()
 
     float costTheta = max(dot(N, L), 0.0);
 
-    vec3 diffuse = kD * Diffuse_Lambert(albedo);
-    
-    irradiance += (diffuse + specular) * uLight[i].color * uLight[i].intensity * costTheta;
+    if (lambertian_diffuse_option)
+    {
+      vec3 diffuse = kD * Diffuse_Lambert(albedo);
+      irradiance += diffuse * uLight[i].color * uLight[i].intensity * costTheta;
+    }
+    else if (burley_diffuse_option)
+    {
+      vec3 diffuse = kD * Diffuse_burley(albedo, max(dot(N, L), 0.0), max(dot(N, V), 0.0), max(dot(L, H), 0.0), roughness);
+      irradiance += diffuse * uLight[i].color * uLight[i].intensity * costTheta;
+    }
+    else if (oren_nayar_diffuse_option)
+    {
+      vec3 diffuse = kD * Diffuse_OrenNayar(albedo, max(dot(N, L), 0.0), max(dot(N, V), 0.0), max(dot(L, V), 0.0), roughness);
+      irradiance += diffuse * uLight[i].color * uLight[i].intensity * costTheta;
+    }
+    else if (cook_torrance_specular_option)
+    {
+      irradiance += specular * uLight[i].color * uLight[i].intensity * costTheta;
+    }
+    else
+    {
+      vec3 diffuse = kD * Diffuse_Lambert(albedo);
+      irradiance += (diffuse + specular) * uLight[i].color * uLight[i].intensity * costTheta;
+    }
   }
 
   outFragColor.rgba = LinearTosRGB(vec4(irradiance, 1.0));
@@ -268,7 +326,20 @@ void imageBasedLighting()
   vec2 brdf =  sRGBToLinear(texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness))).xy;
   vec3 specularBRDFEval = prefilteredSpec * (kS * brdf.x + brdf.y);
 
-  vec3 irradiance = (diffuseBRDFEval + specularBRDFEval);
+  vec3 irradiance = vec3(0.0);
+
+  if (imageBasedLighting_diffuse_option)
+  {
+    irradiance = diffuseBRDFEval;
+  }
+  else if (imageBasedLighting_specular_option)
+  {
+    irradiance = specularBRDFEval;
+  }
+  else if (imageBasedLighting_option)
+  {
+    irradiance = diffuseBRDFEval + specularBRDFEval;
+  }
 
   outFragColor.rgba = LinearTosRGB(vec4(reinhard(irradiance), 1.0));
 }
@@ -296,20 +367,49 @@ void imageBasedLighting_generation()
   vec2 brdf =  sRGBToLinear(texture(brdfPreInt, vec2(max(dot(N, V), 0.0), roughness))).xy;
   vec3 specularBRDFEval = prefilteredSpec * (kS * brdf.x + brdf.y);
 
-  vec3 irradiance = (diffuseBRDFEval + specularBRDFEval);
-
-  outFragColor.rgba = LinearTosRGB(vec4(reinhard(irradiance), 1.0));
+  if (imageBasedLighting_diffuse_gen_option)
+  {
+    outFragColor.rgba = LinearTosRGB(vec4(reinhard(diffuseBRDFEval), 1.0));
+  }
+  else
+  {
+    outFragColor.rgba = LinearTosRGB(vec4(reinhard(diffuseBRDFEval + specularBRDFEval), 1.0));
+  }
 }
 
 void main()
 {
-  if (ponctualLights_option)
+  if (lambertian_diffuse_option)
+  {
+    ponctualLights();
+  }
+  else if (burley_diffuse_option)
+  {
+    ponctualLights();
+  }
+  else if (oren_nayar_diffuse_option)
+  {
+    ponctualLights();
+  }
+  else if (cook_torrance_specular_option)
+  {
+    ponctualLights();
+  }
+  else if (ponctualLights_option)
   {
     ponctualLights();
   }
   else if (texture_pbr_option)
   {
     textureRustedIron_pbr();
+  }
+  else if (imageBasedLighting_diffuse_option)
+  {
+    imageBasedLighting();
+  }
+  else if (imageBasedLighting_specular_option)
+  {
+    imageBasedLighting();
   }
   else if (imageBasedLighting_option)
   {

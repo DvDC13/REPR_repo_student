@@ -51,8 +51,14 @@ class Application {
   private _texture_env: Texture2D<HTMLElement> | null;
   private _texture_env_diffuse: Texture2D<PixelArray> | null;
 
+  private _lambertian_diffuse_option : boolean;
+  private _burley_diffuse_option : boolean;
+  private _oren_nayar_diffuse_option : boolean;
+  private _cook_torrance_specular_option : boolean;
   private _ponctualLights_option : boolean;
   private _texture_pbr_option : boolean;
+  private _imageBasedLighting_diffuse_option : boolean;
+  private _imageBasedLighting_specular_option : boolean;
   private _imageBasedLighting_option : boolean;
   private _imageBasedLighting_diffuse_gen_option : boolean;
 
@@ -145,8 +151,14 @@ class Application {
     this._texture_env = null;
     this._texture_env_diffuse = null;
 
+    this._lambertian_diffuse_option = false;
+    this._burley_diffuse_option = false;
+    this._oren_nayar_diffuse_option = false;
+    this._cook_torrance_specular_option = false;
     this._ponctualLights_option = false;
     this._texture_pbr_option = false;
+    this._imageBasedLighting_diffuse_option = false;
+    this._imageBasedLighting_specular_option = false;
     this._imageBasedLighting_option = false;
     this._imageBasedLighting_diffuse_gen_option = false;
 
@@ -320,16 +332,6 @@ class Application {
       this._uniforms.texture_env_diffuse = this._texture_env_diffuse;
     }
 
-    console.log(this._uniforms.brdfPreInt);
-    console.log(this._uniforms.prefilteredDiffuse);
-    console.log(this._uniforms.prefilteredSpecular);
-    console.log(this._uniforms.ironColor);
-    console.log(this._uniforms.ironNormal);
-    console.log(this._uniforms.ironRoughness);
-    console.log(this._uniforms.ironMetallic);
-    console.log(this._uniforms.texture_env);
-    console.log(this._uniforms.texture_env_diffuse);
-
     // Event handlers (mouse and keyboard)
     canvas.addEventListener('keydown', this.onKeyDown, true);
     canvas.addEventListener('pointerdown', this.onPointerDown, true);
@@ -388,18 +390,26 @@ class Application {
     // Set the light intensity.
     this._uniforms['uLight.intensity'] = this._pointLight.intensity;
 
+    // Set the boolean for the lambertian diffuse.
+    this._uniforms['lambertian_diffuse_option'] = this._lambertian_diffuse_option;
+    // Set the boolean for the burley diffuse.
+    this._uniforms['burley_diffuse_option'] = this._burley_diffuse_option;
+    // Set the boolean for the oren nayar diffuse.
+    this._uniforms['oren_nayar_diffuse_option'] = this._oren_nayar_diffuse_option;
+    // Set the boolean for the cook torrance specular.
+    this._uniforms['cook_torrance_specular_option'] = this._cook_torrance_specular_option;
     // Set the boolean for the ponctual lights.
     this._uniforms['ponctualLights_option'] = this._ponctualLights_option;
     // Set the boolean for the texture pbr.
     this._uniforms['texture_pbr_option'] = this._texture_pbr_option;
+    // Set the boolean for the image based lighting diffuse.
+    this._uniforms['imageBasedLighting_diffuse_option'] = this._imageBasedLighting_diffuse_option;
+    // Set the boolean for the image based lighting specular.
+    this._uniforms['imageBasedLighting_specular_option'] = this._imageBasedLighting_specular_option;
     // Set the boolean for the image based lighting.
     this._uniforms['imageBasedLighting_option'] = this._imageBasedLighting_option;
     // Set the boolean for the image based lighting diffuse gen.
     this._uniforms['imageBasedLighting_diffuse_gen_option'] = this._imageBasedLighting_diffuse_gen_option;
-
-    if (this._imageBasedLighting_diffuse_gen_option) {
-      this._context.gl.clear(this._context.gl.COLOR_BUFFER_BIT | this._context.gl.DEPTH_BUFFER_BIT)
-    }
 
     // Array of roughness values to test.
     let roughnessValues = [0.0025, 0.04, 0.16, 0.36, 0.64];
@@ -443,9 +453,15 @@ class Application {
     gui.add(this._camera.position, '0', -5.0, 5.0).name('camera x');
     gui.add(this._camera.position, '1', -5.0, 5.0).name('camera y');
     gui.add(this._camera.position, '2', -5.0, 5.0).name('camera z');
+    gui.add(this, '_lambertian_diffuse_option').name('Lambertian Diffuse');
+    gui.add(this, '_burley_diffuse_option').name('Burley Diffuse');
+    gui.add(this, '_oren_nayar_diffuse_option').name('Oren Nayar Diffuse');
+    gui.add(this, '_cook_torrance_specular_option').name('Cook Torrance Specular');
     gui.add(this, '_ponctualLights_option').name('Ponctual Lights');
     gui.add(this, '_texture_pbr_option').name('Texture PBR');
-    gui.add(this, '_imageBasedLighting_option').name('IBL');
+    gui.add(this, '_imageBasedLighting_diffuse_option').name('IBL Diffuse');
+    gui.add(this, '_imageBasedLighting_specular_option').name('IBL Specular');
+    gui.add(this, '_imageBasedLighting_option').name('IBL Total');
     gui.add(this, '_imageBasedLighting_diffuse_gen_option').name('IBL Diffuse Gen');
     return gui;
   }
